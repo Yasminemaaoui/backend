@@ -3,21 +3,17 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import login as auth_login, logout as auth_logout
-from .serializers import LoginSerializer, UserSerializer
+from .serializers import LoginSerializer, UserSerializer, ChangePasswordSerializer
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    """
-    Authentifie l'utilisateur avec email + mot de passe
-    et crée une session Django.
-    """
     serializer = LoginSerializer(data=request.data)
     
     if serializer.is_valid():
-        user = serializer.validated_data  # L'objet user retourné par validate()
-        auth_login(request, user)          # Crée la session côté Django
+        user = serializer.validated_data
+        auth_login(request, user)
         
         return Response({
             'success': True,
@@ -43,9 +39,6 @@ def login(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    """
-    Déconnecte l'utilisateur et supprime la session.
-    """
     auth_logout(request)
     return Response({
         'success': True,
@@ -56,9 +49,6 @@ def logout_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """
-    Retourne les informations de l'utilisateur connecté.
-    """
     user = request.user
     return Response({
         'id': user.id,
@@ -71,3 +61,31 @@ def me(request):
         'email_verified': user.email_verified,
         'created_at': user.created_at,
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Permet à l'utilisateur connecté de changer son mot de passe.
+    Requiert : old_password, new_password, confirm_password
+    """
+    serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+    
+    if serializer.is_valid():
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        
+        # ✅ Reconnecte l'utilisateur pour ne pas invalider la session après save()
+        auth_login(request, user)
+        
+        return Response({
+            'success': True,
+            'message': 'Mot de passe changé avec succès'
+        }, status=status.HTTP_200_OK)
+    
+    return Response({
+        'success': False,
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
